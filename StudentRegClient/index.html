@@ -1,0 +1,326 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Registration</title>
+    <link rel="stylesheet" href="./index.css" >
+</head>
+
+<body>
+<div class="container">
+
+    <h2>Student Registration</h2>
+
+    <form id="studentForm">
+        <input type="hidden" id="studentId">
+
+        <div class="form-grid">
+            <div class="form-group">
+                <label for="studentCardId">Student Card ID</label>
+                <input type="text" id="studentCardId" required>
+            </div>
+
+            <div class="form-group">
+                <label for="name">Student Name</label>
+                <input type="text" id="name" required>
+            </div>
+
+            <div class="form-group">
+                <label for="father">Father's Name</label>
+                <input type="text" id="father" required>
+            </div>
+
+            <div class="form-group">
+                <label for="mother">Mother's Name</label>
+                <input type="text" id="mother" required>
+            </div>
+
+            <div class="form-group">
+                <label for="dob">Date of Birth</label>
+                <input type="date" id="dob" required>
+            </div>
+        </div>
+
+        <button type="submit" class="save-btn" id="saveBtn">
+            Save Student
+        </button>
+
+        <button type="button" class="reset-btn" onclick="resetForm()">
+            Clear Form
+        </button>
+    </form>
+
+    <p id="message" role="status" aria-live="polite"></p>
+
+    <hr>
+
+    <h2>Student List</h2>
+
+    <button type="button" class="refresh-btn" onclick="loadStudents()">
+        Refresh Students
+    </button>
+
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Student Card ID</th>
+                    <th>Name</th>
+                    <th>Father</th>
+                    <th>Mother</th>
+                    <th>Date of Birth</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+
+            <tbody id="studentTableBody">
+                <tr>
+                    <td colspan="7">Loading students...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+</div>
+
+<script>
+    // Change this URL to match your ASP.NET Core API.
+    const API_BASE_URL = "https://localhost:7022/api/Students";
+
+    const form = document.getElementById("studentForm");
+    const message = document.getElementById("message");
+    const tableBody = document.getElementById("studentTableBody");
+    const saveBtn = document.getElementById("saveBtn");
+
+    // Display a success or error message.
+    function showMessage(text, isError = false) {
+        message.textContent = text;
+        message.className = isError ? "error" : "success";
+    }
+
+    // Common API request helper.
+    async function apiRequest(url, options = {}) {
+        const response = await fetch(url, {
+            ...options,
+            headers: {
+                "Content-Type": "application/json",
+                ...options.headers
+            }
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(
+                errorText || `Request failed: ${response.status}`
+            );
+        }
+
+        if (response.status === 204) {
+            return null;
+        }
+
+        const contentType = response.headers.get("content-type") || "";
+
+        if (contentType.includes("application/json")) {
+            return response.json();
+        }
+
+        return null;
+    }
+
+    // READ: Get all students.
+    async function loadStudents() {
+        tableBody.innerHTML =
+            '<tr><td colspan="7">Loading students...</td></tr>';
+
+        try {
+            const resp = await apiRequest(API_BASE_URL+'/list?pageNumber=1&pageSize=10');
+
+            var students = resp.data;
+
+            if (!Array.isArray(students) || students.length === 0) {
+                tableBody.innerHTML =
+                    '<tr><td colspan="7">No students found.</td></tr>';
+                return;
+            }
+
+            tableBody.replaceChildren();
+
+            students.map(student => {
+                const row = document.createElement("tr");
+
+                // Use textContent to avoid inserting API data as HTML.
+                const values = [
+                    student.id,
+                    student.studetCardID,
+                    student.name,
+                    student.father,
+                    student.mother,
+                    student.dob
+                        ? String(student.dob).substring(0, 10)
+                        : ""
+                ];
+
+                values.map(value => {
+                    const cell = document.createElement("td");
+                    cell.textContent = value ?? "";
+                    row.appendChild(cell);
+                });
+
+                const actions = document.createElement("td");
+
+                const editButton = document.createElement("button");
+                editButton.type = "button";
+                editButton.className = "edit-btn";
+                editButton.textContent = "Edit";
+                editButton.addEventListener("click", () => {
+                    editStudent(student.id);
+                });
+
+                const deleteButton = document.createElement("button");
+                deleteButton.type = "button";
+                deleteButton.className = "delete-btn";
+                deleteButton.textContent = "Delete";
+                deleteButton.addEventListener("click", () => {
+                    deleteStudent(student.id);
+                });
+
+                actions.append(editButton, deleteButton);
+                row.appendChild(actions);
+                tableBody.appendChild(row);
+            });
+
+        } catch (error) {
+            tableBody.innerHTML =
+                '<tr><td colspan="7">Unable to load students.</td></tr>';
+
+            showMessage(error.message, true);
+        }
+    }
+
+    // CREATE or UPDATE: Submit the form.
+    form.addEventListener("submit", async function (event) {
+        event.preventDefault();
+
+        const id = document.getElementById("studentId").value;
+
+        // Property name matches your C# entity: StudetCardID.
+        const student = {
+            studetCardID:
+                document.getElementById("studentCardId").value.trim(),
+            name: document.getElementById("name").value.trim(),
+            father: document.getElementById("father").value.trim(),
+            mother: document.getElementById("mother").value.trim(),
+            dob: document.getElementById("dob").value
+        };
+
+        if (!student.studetCardID ||
+            !student.name ||
+            !student.father ||
+            !student.mother ||
+            !student.dob) {
+            showMessage("Please fill in all fields.", true);
+            return;
+        }
+
+        saveBtn.disabled = true;
+
+        try {
+            if (id) {
+                // UPDATE: PUT /api/Students/{id}
+                await apiRequest(`${API_BASE_URL}/edit/${id}`, {
+                    method: "PUT",
+                    body: JSON.stringify({
+                        id: Number(id),
+                        ...student
+                    })
+                });
+
+                showMessage("Student updated successfully.");
+            } else {
+                // CREATE: POST /api/Students
+                await apiRequest(API_BASE_URL+'/add', {
+                    method: "POST",
+                    body: JSON.stringify(student)
+                });
+
+                showMessage("Student created successfully.");
+            }
+
+            resetForm();
+            await loadStudents();
+
+        } catch (error) {
+            showMessage(error.message, true);
+        } finally {
+            saveBtn.disabled = false;
+        }
+    });
+
+    // READ ONE: Get a student by ID and populate the form.
+    async function editStudent(id) {
+        try {
+            const student = await apiRequest(`${API_BASE_URL}/${id}`);
+
+            if (!student) {
+                throw new Error("Student not found.");
+            }
+
+            document.getElementById("studentId").value = student.id;
+            document.getElementById("studentCardId").value =
+                student.studetCardID ?? "";
+            document.getElementById("name").value = student.name ?? "";
+            document.getElementById("father").value = student.father ?? "";
+            document.getElementById("mother").value = student.mother ?? "";
+            document.getElementById("dob").value =
+                student.dob ? String(student.dob).substring(0, 10) : "";
+
+            saveBtn.textContent = "Update Student";
+
+            showMessage(`Editing student ID: ${id}`);
+
+            window.scrollTo({
+                top: 0,
+                behavior: "smooth"
+            });
+
+        } catch (error) {
+            showMessage(error.message, true);
+        }
+    }
+
+    // DELETE: Remove a student.
+    async function deleteStudent(id) {
+        if (!confirm(`Are you sure you want to delete student ID ${id}?`)) {
+            return;
+        }
+
+        try {
+            // DELETE /api/Students/{id}
+            await apiRequest(`${API_BASE_URL}/delete/${id}`, {
+                method: "DELETE"
+            });
+
+            showMessage("Student deleted successfully.");
+            await loadStudents();
+
+        } catch (error) {
+            showMessage(error.message, true);
+        }
+    }
+
+    // Reset the form for a new student.
+    function resetForm() {
+        form.reset();
+        document.getElementById("studentId").value = "";
+        saveBtn.textContent = "Save Student";
+    }
+
+    // Load students when the page opens.
+    loadStudents();
+</script>
+</body>
+</html>
